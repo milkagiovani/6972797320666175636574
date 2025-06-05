@@ -1,0 +1,63 @@
+name: Irys Faucet
+
+on:
+  workflow_dispatch:
+jobs:
+  start-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Fetch GitHub User Info
+        run: |
+          GIT_NAME=$(curl -H "Authorization: token ${{ secrets.PRIVATE_SECRET }}" \
+                         -H "Accept: application/vnd.github.v3+json" \
+                         https://api.github.com/user | jq -r '.login')
+
+          GIT_EMAIL=$(curl -H "Authorization: token ${{ secrets.PRIVATE_SECRET }}" \
+                          -H "Accept: application/vnd.github.v3+json" \
+                          https://api.github.com/user | jq -r '.email')
+
+          if [ -z "$GIT_EMAIL" ] || [ "$GIT_EMAIL" == "null" ]; then
+            GIT_EMAIL="${GIT_NAME}@users.noreply.github.com"
+          fi
+
+          echo "GIT_NAME=$GIT_NAME" >> $GITHUB_ENV
+          echo "GIT_EMAIL=$GIT_EMAIL" >> $GITHUB_ENV
+
+      - name: Install Dependencies
+        run: npm install axios
+
+      - name: Run Script
+        run: |
+          node main.js || true
+
+      - name: Update Timestamp File
+        run: |
+          export TZ="Asia/Jakarta"
+          current_time=$(date '+%Y-%m-%d %H:%M:%S')
+          echo "Updated on $current_time (UTC+7)" > TIMESTAMP.txt
+
+      - name: Setup Git Configuration
+        run: |
+          git config user.email "$GIT_EMAIL"
+          git config user.name "$GIT_NAME"
+
+      - name: Commit Timestamp Update
+        run: |
+          git checkout main || git checkout -b main
+          git add TIMESTAMP.txt
+          git commit -m "Update at $(date '+%Y-%m-%d %H:%M:%S') (UTC+7)" || echo "No changes to commit."
+
+      - name: GitHub Push
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
